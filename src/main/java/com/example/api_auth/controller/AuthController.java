@@ -1,9 +1,12 @@
 package com.example.api_auth.controller;
 
 import com.example.api_auth.service.JwtService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import java.util.List;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -14,18 +17,39 @@ public class AuthController {
 
     @Autowired
     private JwtService jwtService;
+    
+    @Value("${jwt.access-expiration}")
+    private long accessTokenExpirationMs;
+    
+    @Value("${jwt.refresh-expiration}")
+    private long refreshTokenExpirationMs;
+    
+    @Value("${allowed-clients}")
+    private Map<String, List<String>> allowedClients;
 
     // Access Token + Refresh Token 발급
     @PostMapping("/token")
-    public ResponseEntity<Map<String, Object>> generateTokens(@RequestParam String clientId) {
+    public ResponseEntity<Map<String, Object>> generateTokens(@RequestParam String clientId, HttpServletRequest request) {
+        // 클라이언트 IP 주소 가져오기
+        String clientIp = getClientIpAddress(request);
+        
+        // clientId와 IP 매칭 검증
+        if (!isValidClientIdAndIp(clientId, clientIp)) {
+            return ResponseEntity.status(403).body(Map.of(
+                "error", "Invalid client ID or IP address",
+                "message", "Client ID and IP address do not match"
+            ));
+        }
+        
         Map<String, String> tokens = jwtService.generateTokenPair(clientId);
 
         Map<String, Object> response = new HashMap<>();
         response.put("access_token", tokens.get("access_token"));
         response.put("refresh_token", tokens.get("refresh_token"));
         response.put("token_type", "Bearer");
-        response.put("access_token_expires_in", 3600); // 1시간
-        response.put("refresh_token_expires_in", 2592000); // 30일
+        response.put("access_token_expires_in", accessTokenExpirationMs / 1000); // 밀리초 → 초 변환
+        response.put("refresh_token_expires_in", refreshTokenExpirationMs / 1000); // 밀리초 → 초 변환
+        response.put("client_ip", clientIp);
 
         return ResponseEntity.ok(response);
     }
@@ -131,5 +155,32 @@ public class AuthController {
                 "message", e.getMessage()
             ));
         }
+    }
+    
+    // 클라이언트 IP 주소 가져오기
+    private String getClientIpAddress(HttpServletRequest request) {
+        String xForwardedFor = request.getHeader("X-Forwarded-For");
+        if (xForwardedFor != null && !xForwardedFor.isEmpty() && !"unknown".equalsIgnoreCase(xForwardedFor)) {
+            return xForwardedFor.split(",")[0].trim();
+        }
+        
+        String xRealIp = request.getHeader("X-Real-IP");
+        if (xRealIp != null && !xRealIp.isEmpty() && !"unknown".equalsIgnoreCase(xRealIp)) {
+            return xRealIp;
+        }
+        
+        return request.getRemoteAddr();
+    }
+    
+    // clientId와 IP 매칭 검증
+    private boolean isValidClientIdAndIp(String clientId, String clientIp) {
+        // 설정 파일에서 허용된 clientId와 IP 조합 확인
+        if (allowedClients != null && allowedClients.containsKey(clientId)) {
+            List<String> allowedIps = allowedClients.get(clientId);
+            return allowedIps.contains(clientIp);
+        }
+        
+        // 허용되지 않은 clientId
+        return false;
     }
 }

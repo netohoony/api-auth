@@ -33,6 +33,15 @@ jwt:
   access-expiration: 600000 #3600000        # 1시간 (밀리초)
   refresh-expiration: 2592000000    # 30일 (밀리초)
 
+# 허용된 clientId와 IP 조합
+allowed-clients:
+  test_id:
+    - 127.0.0.1
+    - 192.168.0.56
+  sample_id:
+    - 127.0.0.1
+    - 192.168.0.56
+
 # ??
 logging:
   level:
